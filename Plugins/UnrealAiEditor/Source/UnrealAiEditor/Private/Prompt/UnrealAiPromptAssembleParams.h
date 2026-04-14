@@ -4,6 +4,7 @@
 #include "Context/AgentContextTypes.h"
 #include "UnrealAiBlueprintBuilderTargetKind.h"
 #include "UnrealAiEnvironmentBuilderTargetKind.h"
+#include "UnrealAiProductSpecialistId.h"
 
 /** Parameters for assembling static prompt chunks + transcript tokens (see `prompts/README.md`). */
 struct FUnrealAiPromptAssembleParams
@@ -33,4 +34,17 @@ struct FUnrealAiPromptAssembleParams
 	EUnrealAiEnvironmentBuilderTargetKind EnvironmentBuilderTargetKind = EUnrealAiEnvironmentBuilderTargetKind::PcgScene;
 
 	bool bInjectEnvironmentBuilderResumeChunk = false;
+
+	/** Scene / future specialists: dedicated prompt stack + pinned tools. */
+	EUnrealAiProductSpecialistId ActiveProductSpecialistId = EUnrealAiProductSpecialistId::None;
+
+	/**
+	 * Agent orchestrator lane (not builder, not specialist, not plan-node): thin routing stack under `prompts/chunks/orchestrator/` plus builder delegation excerpts.
+	 */
+	bool bOrchestratorAgentTurn = false;
+
+	bool bInjectProductSpecialistResumeChunk = false;
+
+	/** Verbatim orchestrator brief for the active specialist turn (`{{SPECIALIST_DELEGATION_BRIEF}}`). */
+	FString SpecialistDelegationBrief;
 };

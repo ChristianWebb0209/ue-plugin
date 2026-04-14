@@ -10,7 +10,7 @@ This folder holds **semantic fragments** the harness assembles into **system** a
 
 - **One idea per file** so prompts can be cached (static prefix) and A/B-tested without duplicating prose.
 - **Placeholders** use `{{LIKE_THIS}}`. The harness fills them from `FUnrealAiContextService` and the active tool pack.
-- **Layout:** shared prose lives in **`chunks/common/`**. **Blueprint Builder** domain files are under **`chunks/blueprint-builder/`** (including main-agent delegation/resume for Blueprint). **Environment Builder** domain files are under **`chunks/environment-builder/`** (including main-agent delegation/resume for PCG/landscape/foliage). **Plan DAG** planner vs executor lives in **`chunks/plan/`** and **`chunks/plan-node/`**. **Order** matches `FUnrealAiLinearPromptAssemblyStrategy` (see below).
+- **Layout:** shared prose lives in **`chunks/common/`**. **Orchestrator** (thin Agent lane) lives in **`chunks/orchestrator/`**. **Product specialists** live in **`chunks/specialists/<id>/`**, plus shared **`chunks/specialists/00-delegation-brief-token.md`** (`{{SPECIALIST_DELEGATION_BRIEF}}`) and **`chunks/specialists/00-resume-to-orchestrator.md`**. **Blueprint Builder** domain files are under **`chunks/blueprint-builder/`** (including main-agent delegation/resume for Blueprint). **Environment Builder** domain files are under **`chunks/environment-builder/`** (including main-agent delegation/resume for PCG/landscape/foliage). **Plan DAG** planner vs executor lives in **`chunks/plan/`** and **`chunks/plan-node/`**. **Order** matches `FUnrealAiLinearPromptAssemblyStrategy` (see below).
 - **Canonical behavior:** **`common/01-identity.md`** (who you are + **Examples contract**) + **`common/04-tool-calling-contract.md`** (**Discovery before targeted calls**, schemas, minimal JSON; keep in sync with merged tool catalog). Other chunks address **chunk-specific** behavior or fix **local** example leakage—do not repeat the full invariant in every file.
 
 ## Composition matrix (main stack + shared files)
@@ -30,6 +30,8 @@ Paths are under `prompts/chunks/`. **Common** = `chunks/common/*.md`.
 | [`environment-builder/08-resume-on-main-agent.md`](chunks/environment-builder/08-resume-on-main-agent.md) | — | ✓ (one-shot) | — | `bInjectEnvironmentBuilderResumeChunk`. |
 | [`blueprint-builder/`](chunks/blueprint-builder/) (00–07, kinds) | — | **Blueprint sub-turn** | — | Full stack when `bBlueprintBuilderMode` (excludes 08–09 above from this stack). |
 | [`environment-builder/`](chunks/environment-builder/) (00–06, kinds) | — | **Environment sub-turn** | — | Full stack when `bEnvironmentBuilderMode` (excludes 07–08 delegation/resume from this stack). |
+| [`orchestrator/`](chunks/orchestrator/) | — | **`bOrchestratorAgentTurn`** | — | Thin Agent lane: delegation protocol; see **Canonical assembly map** below. |
+| [`specialists/`](chunks/specialists/) (`<id>/`, `00-delegation-brief-token.md`, `00-resume-to-orchestrator.md`) | — | specialist / resume | — | `ActiveProductSpecialistId`; orchestrator brief via `{{SPECIALIST_DELEGATION_BRIEF}}`. |
 | [`common/05-context-and-editor.md`](chunks/common/05-context-and-editor.md) | ✓ | ✓ | ✓ | Attachments, snapshot, `@` mentions. |
 | [`common/10-mvp-gameplay-and-tooling.md`](chunks/common/10-mvp-gameplay-and-tooling.md) | ✓ | ✓ | ✓ | MVP gameplay flows, PIE, matrix `ok:false` semantics. |
 | [`plan-node/`](chunks/plan-node/) | — | when thread `*_plan_*` | — | Serial plan DAG node executor turns. |
@@ -51,7 +53,15 @@ The editor builds the system/developer string at LLM time:
 
 Source: [`FUnrealAiLinearPromptAssemblyStrategy::BuildSystemDeveloperContent`](../Source/UnrealAiEditor/Private/Prompt/UnrealAiPromptAssemblyStrategy.cpp). If you change load order there, update this section.
 
-### Main / Ask / Agent / Plan stack (`!bBlueprintBuilderMode && !bEnvironmentBuilderMode`)
+### Orchestrator Agent turn (`bOrchestratorAgentTurn`, Agent mode)
+
+Thin delegation lane: **`chunks/common/01-identity.md`**, mode slice from **`common/02-operating-modes.md`**, **`chunks/orchestrator/00-overview.md`**, **`chunks/orchestrator/01-delegation-protocol.md`**, **`common/04-tool-calling-contract.md`**, Blueprint/Environment delegation + optional resume chunks (same as main stack), optional **`chunks/specialists/00-resume-to-orchestrator.md`** when `bInjectProductSpecialistResumeChunk`, then **`common/05`**, **`07`**, **`08`**, `ApplyTemplateTokens`, optional `SystemOrDeveloperBlock` prepend. Does **not** load **`common/03-complexity-and-todo-plan.md`** or **`common/10-mvp-gameplay-and-tooling.md`**.
+
+### Product specialist sub-turn (`ActiveProductSpecialistId != None`)
+
+**`chunks/common/01-identity.md`**, mode slice from **`common/02-operating-modes.md`**, then **`chunks/specialists/<id>/00-overview.md`** + **`01-scope.md`** for the active id (`scene`, `assets`, `viewport`, `diagnostics`, `playtest`, `animation`, `project-intel`, `editor-ui`, `settings`, `materials`), then **`chunks/specialists/00-delegation-brief-token.md`** (orchestrator brief via `{{SPECIALIST_DELEGATION_BRIEF}}`), then **`common/04`**, **`05`**, **`07`**, **`08`**, `ApplyTemplateTokens`, optional `SystemOrDeveloperBlock` prepend.
+
+### Main / Ask / Agent / Plan stack (`!bBlueprintBuilderMode && !bEnvironmentBuilderMode && !bOrchestratorAgentTurn && specialist None`)
 
 All **numbered** files below live under **`prompts/chunks/common/`** unless noted.
 
@@ -74,7 +84,7 @@ All **numbered** files below live under **`prompts/chunks/common/`** unless note
 | 15 | `chunks/plan/01` … `04` | `bIncludePlanDagChunk` |
 | — | `ApplyTemplateTokens` | then prepend optional `SystemOrDeveloperBlock` |
 
-**Not in this stack:** Blueprint/Environment sub-turn domain files (`blueprint-builder/00–07`, `kinds/`, `environment-builder/00–06`, `kinds/`), and `common/00-template-tokens.md` (authoring only).
+**Not in this stack:** Blueprint/Environment sub-turn domain files (`blueprint-builder/00–07`, `kinds/`, `environment-builder/00–06`, `kinds/`), orchestrator (`chunks/orchestrator/`), product specialist (`chunks/specialists/<id>/`), and `common/00-template-tokens.md` (authoring only).
 
 ### Blueprint Builder sub-turn (`bBlueprintBuilderMode`)
 
@@ -108,7 +118,9 @@ All **numbered** files below live under **`prompts/chunks/common/`** unless note
 
 ### Main Agent vs Builder surfaces (product)
 
-- **Default Agent** turns use `bOmitMainAgentBlueprintMutationTools` + per-tool `agent_surfaces` in the merged catalog ([`tools.main.json`](../Resources/tools.main.json) + [`tools.blueprint.json`](../Resources/tools.blueprint.json) + [`tools.environment.json`](../Resources/tools.environment.json)); [`UnrealAiAgentToolGate`](../Source/UnrealAiEditor/Private/Tools/UnrealAiAgentToolGate.cpp) filters the **tiered tool appendix**.
+- **Agent orchestrator** turns (`bOrchestratorAgentTurn`, specialist `None`): tool gate allow-list in [`UnrealAiOrchestratorToolPolicy`](../Source/UnrealAiEditor/Private/Tools/UnrealAiOrchestratorToolPolicy.h) (read-only snapshot + log); substantive work uses **`<unreal_ai_delegate specialist="…">`** (see **`chunks/orchestrator/`**) or Blueprint / Environment builder tags.
+- **Product specialist** sub-turns: [`UnrealAiProductSpecialistToolPolicy`](../Source/UnrealAiEditor/Private/Tools/UnrealAiProductSpecialistToolPolicy.cpp) + merged catalog categories; orchestrator brief is copied into the specialist system prompt via **`{{SPECIALIST_DELEGATION_BRIEF}}`**.
+- **Ask / Plan** modes and **`_plan_` thread** workers: not on the orchestrator-only path; plan workers keep the broader Agent surface until plan-mode is rebuilt.
 - **Substantive Blueprint graph mutations** on the default path: **`<unreal_ai_build_blueprint>`** with YAML **`target_kind`** → builder stack + domain-filtered tools.
 - **PCG / landscape / foliage mutators** on the default path: **`<unreal_ai_build_environment>`** with YAML **`target_kind`** → Environment Builder stack.
 - **Escape hatch:** when `bOmitMainAgentBlueprintMutationTools` is false, surface gating is bypassed (power users).

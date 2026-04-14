@@ -13,6 +13,7 @@ namespace UnrealAiToolSurfacePipeline
 {
 	/**
 	 * Tiered markdown tool index + telemetry when eligibility is not opted out (default: on; toggle ToolEligibilityTelemetryEnabled in UnrealAiRuntimeDefaults.h for legacy full index experiments).
+	 * Orchestrator + product specialist allow-lists run on **every** LlmRound; BM25 tiering only when LlmRound == 1.
 	 * Returns false when feature off or not applicable; caller falls back to catalog defaults.
 	 */
 	bool TryBuildTieredToolSurface(

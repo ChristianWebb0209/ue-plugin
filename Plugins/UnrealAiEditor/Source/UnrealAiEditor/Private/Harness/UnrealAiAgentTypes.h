@@ -4,6 +4,7 @@
 #include "Context/AgentContextTypes.h"
 #include "UnrealAiBlueprintBuilderTargetKind.h"
 #include "UnrealAiEnvironmentBuilderTargetKind.h"
+#include "UnrealAiProductSpecialistId.h"
 
 /** Stable run identifiers for observability (parent/child workers). */
 struct FUnrealAiRunIds
@@ -110,7 +111,7 @@ struct FUnrealAiToolSurfaceRankedEntry
 /** Observability for tool surface assembly (tools-expansion.md §2.8). */
 struct FUnrealAiToolSurfaceTelemetry
 {
-	/** off | dispatch_eligibility | native_eligibility */
+	/** off | dispatch_eligibility | orchestrator_allow_list | product_specialist_allow_list | native_eligibility */
 	FString ToolSurfaceMode;
 	int32 EligibleCount = 0;
 	int32 RosterChars = 0;
@@ -189,4 +190,29 @@ struct FUnrealAiAgentTurnRequest
 
 	/** One-shot resume chunk after `<unreal_ai_environment_builder_result>` (`environment-builder/08-resume-on-main-agent.md`). */
 	bool bInjectEnvironmentBuilderResumeChunk = false;
+
+	/**
+	 * Product specialist sub-turn (e.g. Scene) after `<unreal_ai_delegate specialist="...">` from the orchestrator.
+	 * Cleared when `<unreal_ai_specialist_result>` is consumed.
+	 */
+	EUnrealAiProductSpecialistId ActiveProductSpecialistId = EUnrealAiProductSpecialistId::None;
+
+	/**
+	 * Inner payload from the last `<unreal_ai_delegate>...</unreal_ai_delegate>` (verbatim, bounded).
+	 * Injected into specialist system prompts as {{SPECIALIST_DELEGATION_BRIEF}}; cleared when the specialist returns or on builder handoff.
+	 */
+	FString LastProductSpecialistDelegationBrief;
+
+	/** One-shot: after specialist result, inject `specialists/00-resume-to-orchestrator.md` into the orchestrator stack. */
+	bool bInjectProductSpecialistResumeChunk = false;
+
+	/**
+	 * Thin Agent orchestrator: delegation prompts + fixed read-mostly tool roster.
+	 * Excludes builder sub-turns, product specialist sub-turns, and plan DAG worker threads (`*_plan_*`).
+	 */
+	bool IsOrchestratorAgentToolSurface() const
+	{
+		return Mode == EUnrealAiAgentMode::Agent && !bBlueprintBuilderTurn && !bEnvironmentBuilderTurn
+			&& ActiveProductSpecialistId == EUnrealAiProductSpecialistId::None && !ThreadId.Contains(TEXT("_plan_"));
+	}
 };

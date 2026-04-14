@@ -11,13 +11,17 @@
 #include "Misc/UnrealAiRuntimeDefaults.h"
 
 #include "Harness/UnrealAiAgentTypes.h"
+#include "UnrealAiProductSpecialistId.h"
 
 #include "Misc/SecureHash.h"
 
 #include "Tools/UnrealAiBlueprintBuilderToolSurface.h"
 #include "Tools/UnrealAiEnvironmentBuilderToolSurface.h"
+#include "Tools/UnrealAiProductSpecialistCoreTools.h"
 
 #include "Tools/UnrealAiAgentToolGate.h"
+
+#include "Tools/UnrealAiOrchestratorToolPolicy.h"
 
 #include "Tools/UnrealAiToolBm25Index.h"
 
@@ -77,6 +81,71 @@ namespace UnrealAiToolSurfacePipelinePriv
 
 	}
 
+	/** Shared tail for fixed-order tool rosters (orchestrator + product specialist allow-lists). */
+	static bool EmitOrderedToolAppendixTiered(
+		const FUnrealAiAgentTurnRequest& Request,
+		FUnrealAiToolCatalog* Catalog,
+		const FUnrealAiModelCapabilities& Caps,
+		const FUnrealAiToolPackOptions* PackOptions,
+		TFunctionRef<bool(const FString&)> ToolFilter,
+		const TArray<FString>& Ordered,
+		const TCHAR* SurfaceProfile,
+		const TCHAR* ToolSurfaceModeStr,
+		const TCHAR* SelectionReason,
+		const double T0,
+		FString& OutToolIndexMarkdown,
+		FUnrealAiToolSurfaceTelemetry& OutTelemetry)
+	{
+		OutTelemetry.SurfaceProfile = SurfaceProfile;
+
+		TSet<FString> EmptyGuardrailIds;
+		int32 RankIx = 0;
+		for (const FString& Tid : Ordered)
+		{
+			FUnrealAiToolSurfaceRankedEntry E;
+			E.Rank = RankIx++;
+			E.ToolId = Tid;
+			E.CombinedScore = 1.f;
+			E.Bm25Norm01 = 0.f;
+			E.ContextMultiplier = 1.f;
+			E.UsagePrior01 = 0.f;
+			E.bUsagePriorBlended = false;
+			E.bGuardrail = false;
+			E.SelectionReason = SelectionReason;
+			OutTelemetry.RankedTools.Add(E);
+		}
+
+		const int32 ExpandedCount = UnrealAiRuntimeDefaults::ToolExpandedCount;
+		const int32 Budget = UnrealAiRuntimeDefaults::ToolSurfaceBudgetChars;
+		const int32 ParamsExcerptMax = 900;
+
+		Catalog->BuildCompactToolIndexAppendixTiered(
+			Request.Mode,
+			Caps,
+			PackOptions,
+			Ordered,
+			EmptyGuardrailIds,
+			ExpandedCount,
+			Budget,
+			ToolFilter,
+			OutToolIndexMarkdown,
+			ParamsExcerptMax);
+
+		const double T1 = FPlatformTime::Seconds();
+		OutTelemetry.ToolSurfaceMode = ToolSurfaceModeStr;
+		OutTelemetry.EligibleCount = Ordered.Num();
+		OutTelemetry.RosterChars = OutToolIndexMarkdown.Len();
+		OutTelemetry.BudgetRemaining = FMath::Max(0, Budget - OutToolIndexMarkdown.Len());
+		OutTelemetry.RetrievalLatencyMs = static_cast<int32>((T1 - T0) * 1000.0);
+		OutTelemetry.KEffective = Ordered.Num();
+		for (int32 I = 0; I < FMath::Min(ExpandedCount, Ordered.Num()); ++I)
+		{
+			OutTelemetry.ExpandedToolIds.Add(Ordered[I]);
+		}
+
+		return !OutToolIndexMarkdown.IsEmpty();
+	}
+
 } // namespace UnrealAiToolSurfacePipelinePriv
 
 
@@ -130,20 +199,6 @@ bool UnrealAiToolSurfacePipeline::TryBuildTieredToolSurface(
 		return false;
 
 	}
-
-	if (LlmRound != 1)
-
-	{
-
-		// Cache / topic: only reshape tool surface on first LLM round of a user send (repair rounds keep prior surface in conv).
-
-		OutTelemetry.ToolSurfaceMode = TEXT("off");
-
-		return false;
-
-	}
-
-
 
 	const double T0 = FPlatformTime::Seconds();
 
@@ -245,7 +300,63 @@ bool UnrealAiToolSurfacePipeline::TryBuildTieredToolSurface(
 
 	OutTelemetry.QueryHash = UnrealAiToolSurfacePipelinePriv::HashUtf8(Hybrid);
 
+	if (Request.ActiveProductSpecialistId != EUnrealAiProductSpecialistId::None)
+	{
+		TArray<FString> Ordered;
+		UnrealAiProductSpecialistCoreTools::BuildSpecialistTieredAppendixOrder(
+			Request.ActiveProductSpecialistId,
+			*Catalog,
+			Request.Mode,
+			Caps,
+			PackOptions,
+			ToolFilter,
+			Ordered);
+		return UnrealAiToolSurfacePipelinePriv::EmitOrderedToolAppendixTiered(
+			Request,
+			Catalog,
+			Caps,
+			PackOptions,
+			ToolFilter,
+			Ordered,
+			TEXT("product_specialist_allow_list"),
+			TEXT("product_specialist_allow_list"),
+			TEXT("specialist_allow_list"),
+			T0,
+			OutToolIndexMarkdown,
+			OutTelemetry);
+	}
 
+	if (Request.IsOrchestratorAgentToolSurface() && Request.bOmitMainAgentBlueprintMutationTools)
+	{
+		TArray<FString> Ordered;
+		UnrealAiOrchestratorToolPolicy::AppendOrderedOrchestratorToolsIfAllowed(ToolFilter, Ordered);
+		return UnrealAiToolSurfacePipelinePriv::EmitOrderedToolAppendixTiered(
+			Request,
+			Catalog,
+			Caps,
+			PackOptions,
+			ToolFilter,
+			Ordered,
+			TEXT("orchestrator_allow_list"),
+			TEXT("orchestrator_allow_list"),
+			TEXT("orchestrator_allow_list"),
+			T0,
+			OutToolIndexMarkdown,
+			OutTelemetry);
+	}
+
+	if (LlmRound != 1)
+
+	{
+
+		// BM25 tiering only on round 1; later rounds keep the prior tool list in the conversation. Orchestrator / product
+		// specialist allow-lists are rebuilt every round (handled above).
+
+		OutTelemetry.ToolSurfaceMode = TEXT("off");
+
+		return false;
+
+	}
 
 	FUnrealAiToolBm25Index Index;
 

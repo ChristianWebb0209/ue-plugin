@@ -7,6 +7,8 @@
 #include "Harness/FUnrealAiConversationStore.h"
 #include "Tools/UnrealAiBuildBlueprintTag.h"
 #include "Tools/UnrealAiBuildEnvironmentTag.h"
+#include "Tools/UnrealAiDelegateSpecialistTag.h"
+#include "Tools/UnrealAiProductSpecialistHandoff.h"
 #include "Tools/UnrealAiBlueprintBuilderToolSurface.h"
 #include "Tools/UnrealAiEnvironmentBuilderToolSurface.h"
 #include "Harness/FUnrealAiModelProfileRegistry.h"
@@ -2768,12 +2770,14 @@ namespace UnrealAiAgentHarnessPriv
 			Conv->GetMessagesMutable().Add(LoopNudge);
 		}
 		if (ToolFailCount >= 4 && Request.Mode == EUnrealAiAgentMode::Agent && !bTodoPlanOnly && Request.bOmitMainAgentBlueprintMutationTools
-			&& !Request.bBlueprintBuilderTurn && !Request.bEnvironmentBuilderTurn)
+			&& Request.IsOrchestratorAgentToolSurface())
 		{
 			FUnrealAiConversationMessage BpNudge;
 			BpNudge.Role = TEXT("user");
 			BpNudge.Content = TEXT(
-				"[Harness][reason=multi_tool_failure_round] Multiple tool failures this round. For Blueprint graph mutations from the main agent, use the <unreal_ai_build_blueprint> handoff (see prompts/chunks/blueprint-builder/08-delegation-from-main-agent.md). Use only tool_id values from the current tool appendix—never invent names. If still blocked, summarize the exact error text and stop.");
+				"[Harness][reason=multi_tool_failure_round] Multiple tool failures this round. From the orchestrator, delegate with `<unreal_ai_delegate specialist=\"...\">...</unreal_ai_delegate>` "
+				"(see `prompts/chunks/orchestrator/01-delegation-protocol.md`) or use `<unreal_ai_build_blueprint>` / `<unreal_ai_build_environment>` as appropriate. "
+				"Use only tool_id values from the current tool appendix—never invent names. If still blocked, summarize the exact error text and stop.");
 			Conv->GetMessagesMutable().Add(BpNudge);
 			EmitEnforcementEvent(TEXT("blueprint_mutation_handoff_nudge"), FString::Printf(TEXT("tool_fail_count=%d"), ToolFailCount));
 		}
@@ -2866,12 +2870,18 @@ namespace UnrealAiAgentHarnessPriv
 							"Do not repeat identical discovery calls; use mutation tools from your appendix for this handoff, "
 							"or return <unreal_ai_environment_builder_result> with a concise blocker.");
 					}
+					else if (Request.ActiveProductSpecialistId != EUnrealAiProductSpecialistId::None)
+					{
+						NudgeBody = TEXT(
+							"[Harness][reason=product_specialist_mutation_followthrough] This product specialist sub-turn only used read-only tools. "
+							"Apply the requested mutations with write tools from your appendix, or return <unreal_ai_specialist_result> with a concise blocker.");
+					}
 					else if (Request.bOmitMainAgentBlueprintMutationTools)
 					{
 						NudgeBody = TEXT(
-							"[Harness][reason=main_agent_mutation_followthrough] The user request implies edits, but this main-agent turn only used read-only tools. "
-							"Do not loop on the same discovery tool. Emit <unreal_ai_build_blueprint> with concrete paths and target_kind for Kismet work "
-							"(or <unreal_ai_build_environment> for PCG/landscape/foliage), or use write tools that actually appear in your current tool appendix.");
+							"[Harness][reason=orchestrator_mutation_followthrough] The user request implies edits, but this orchestrator turn only used read-only tools. "
+							"Do not loop on the same discovery tool. Delegate with `<unreal_ai_delegate specialist=\"<scene|assets|viewport|...>\">...</unreal_ai_delegate>` (see orchestrator delegation protocol), "
+							"or emit `<unreal_ai_build_blueprint>` / `<unreal_ai_build_environment>` for graph/environment builders as appropriate.");
 					}
 					else
 					{
@@ -2933,15 +2943,36 @@ namespace UnrealAiAgentHarnessPriv
 		const bool bEnvResultParsed =
 			Request.bEnvironmentBuilderTurn && UnrealAiEnvironmentBuilderResultTag::TryConsume(OrigAssist, EnvResultInner, EnvResultVisible);
 
+		FString SpecResultInner;
+		FString SpecResultVisible;
+		const bool bSpecResultParsed = Request.ActiveProductSpecialistId != EUnrealAiProductSpecialistId::None
+			&& UnrealAiProductSpecialistResultTag::TryConsume(OrigAssist, SpecResultInner, SpecResultVisible);
+
+		FString SpecDelegateInner;
+		FString SpecDelegateVisible;
+		EUnrealAiProductSpecialistId DelegateSpecId = EUnrealAiProductSpecialistId::None;
+		const bool bSpecDelegateParsed = UnrealAiDelegateSpecialistTag::TryConsume(
+			OrigAssist,
+			DelegateSpecId,
+			SpecDelegateInner,
+			SpecDelegateVisible);
+
 		FString BpInner;
 		FString BpVisible;
 		const bool bBpParsed = !Request.bBlueprintBuilderTurn && !Request.bEnvironmentBuilderTurn
+			&& Request.ActiveProductSpecialistId == EUnrealAiProductSpecialistId::None
 			&& UnrealAiBuildBlueprintTag::TryConsume(OrigAssist, BpInner, BpVisible);
 
 		FString EnvInner;
 		FString EnvVisibleFromTag;
 		const bool bEnvParsed = !Request.bBlueprintBuilderTurn && !Request.bEnvironmentBuilderTurn
+			&& Request.ActiveProductSpecialistId == EUnrealAiProductSpecialistId::None
 			&& UnrealAiBuildEnvironmentTag::TryConsume(OrigAssist, EnvInner, EnvVisibleFromTag);
+
+		const bool bSpecDelegateHandoff = bSpecDelegateParsed && (Request.Mode == EUnrealAiAgentMode::Agent)
+			&& !Request.bBlueprintBuilderTurn && !Request.bEnvironmentBuilderTurn
+			&& Request.ActiveProductSpecialistId == EUnrealAiProductSpecialistId::None
+			&& !Request.ThreadId.Contains(TEXT("_plan_")) && !SpecDelegateInner.TrimStartAndEnd().IsEmpty();
 
 		const bool bBpHandoff = bBpParsed && (Request.Mode == EUnrealAiAgentMode::Agent) && !Request.bBlueprintBuilderTurn
 			&& !Request.bEnvironmentBuilderTurn && !Request.ThreadId.Contains(TEXT("_plan_")) && !BpInner.TrimStartAndEnd().IsEmpty();
@@ -2958,6 +2989,18 @@ namespace UnrealAiAgentHarnessPriv
 		else if (bEnvHandoff)
 		{
 			Am.Content = EnvVisibleFromTag;
+		}
+		else if (bSpecDelegateHandoff)
+		{
+			Am.Content = SpecDelegateVisible;
+		}
+		else if (bSpecResultParsed)
+		{
+			Am.Content = SpecResultVisible;
+			if (Am.Content.TrimStartAndEnd().IsEmpty())
+			{
+				Am.Content = TEXT("Product specialist finished (structured result follows for the orchestrator).");
+			}
 		}
 		else if (bBbResultParsed)
 		{
@@ -2982,6 +3025,8 @@ namespace UnrealAiAgentHarnessPriv
 		// Models sometimes emit malformed tag junctions (e.g. closing handoff + opening result) that TryConsume skips.
 		UnrealAiBuildBlueprintTag::StripProtocolMarkersForUi(Am.Content);
 		UnrealAiBuildEnvironmentTag::StripProtocolMarkersForUi(Am.Content);
+		UnrealAiDelegateSpecialistTag::StripProtocolMarkersForUi(Am.Content);
+		UnrealAiProductSpecialistResultTag::StripProtocolMarkersForUi(Am.Content);
 		Conv->GetMessagesMutable().Add(Am);
 
 		// Second+ LLM rounds often end with finish_reason=stop and no tool_calls. Models sometimes return an
@@ -3012,7 +3057,8 @@ namespace UnrealAiAgentHarnessPriv
 		// Interactive Agent mode retries empty assistant deltas with a harness nudge. Plan DAG node threads
 		// (`*_plan_*`) run in series; burning multiple LLM rounds here blocks the plan executor and looks
 		// like a hang. Finish the node so the parent plan can advance.
-		if (!bBpHandoff && !bEnvHandoff && !bBbResultParsed && !bEnvResultParsed && bAgentModeWantsToolExecution
+		if (!bBpHandoff && !bEnvHandoff && !bSpecDelegateHandoff && !bSpecResultParsed && !bBbResultParsed && !bEnvResultParsed
+			&& bAgentModeWantsToolExecution
 			&& Am.Content.TrimStartAndEnd().IsEmpty() && LlmRound < EffectiveMaxLlmRounds)
 		{
 			if (!Request.ThreadId.Contains(TEXT("_plan_")))
@@ -3079,6 +3125,34 @@ namespace UnrealAiAgentHarnessPriv
 				TEXT("agent round ended with assistant text only (no tool_calls); harness allows success for qualitative review"));
 		}
 
+		if (bSpecDelegateHandoff)
+		{
+			Request.ActiveProductSpecialistId = DelegateSpecId;
+			Request.bBlueprintBuilderTurn = false;
+			Request.bEnvironmentBuilderTurn = false;
+			{
+				static constexpr int32 GMaxDelegationBriefChars = 16000;
+				FString Brief = SpecDelegateInner.TrimStartAndEnd();
+				if (Brief.Len() > GMaxDelegationBriefChars)
+				{
+					Brief = Brief.Left(GMaxDelegationBriefChars) + TEXT("\n...[truncated]");
+				}
+				Request.LastProductSpecialistDelegationBrief = Brief;
+			}
+			EmitEnforcementEvent(TEXT("product_specialist_chain"), TEXT("chained_subturn_from_delegate_tag"));
+			if (Sink.IsValid())
+			{
+				Sink->OnSubagentBuilderHandoff(UnrealAiProductSpecialistHandoff::SpecialistDisplayName(DelegateSpecId));
+			}
+			FUnrealAiConversationMessage SubSpec;
+			SubSpec.Role = TEXT("user");
+			SubSpec.Content = UnrealAiProductSpecialistHandoff::BuildAutomatedSubturnPreamble(DelegateSpecId) + SpecDelegateInner;
+			Conv->GetMessagesMutable().Add(SubSpec);
+			AssistantBuffer.Reset();
+			DispatchLlm();
+			return;
+		}
+
 		if (bBpHandoff)
 		{
 			EUnrealAiBlueprintBuilderTargetKind ParsedKind = EUnrealAiBlueprintBuilderTargetKind::ScriptBlueprint;
@@ -3086,6 +3160,8 @@ namespace UnrealAiAgentHarnessPriv
 			Request.BlueprintBuilderTargetKind = ParsedKind;
 			Request.bBlueprintBuilderTurn = true;
 			Request.bEnvironmentBuilderTurn = false;
+			Request.ActiveProductSpecialistId = EUnrealAiProductSpecialistId::None;
+			Request.LastProductSpecialistDelegationBrief.Reset();
 			EmitEnforcementEvent(TEXT("blueprint_builder_chain"), TEXT("chained_subturn_from_build_blueprint_tag"));
 			if (Sink.IsValid())
 			{
@@ -3107,6 +3183,8 @@ namespace UnrealAiAgentHarnessPriv
 			Request.EnvironmentBuilderTargetKind = ParsedEnvKind;
 			Request.bEnvironmentBuilderTurn = true;
 			Request.bBlueprintBuilderTurn = false;
+			Request.ActiveProductSpecialistId = EUnrealAiProductSpecialistId::None;
+			Request.LastProductSpecialistDelegationBrief.Reset();
 			EmitEnforcementEvent(TEXT("environment_builder_chain"), TEXT("chained_subturn_from_build_environment_tag"));
 			if (Sink.IsValid())
 			{
@@ -3116,6 +3194,21 @@ namespace UnrealAiAgentHarnessPriv
 			SubEnv.Role = TEXT("user");
 			SubEnv.Content = UnrealAiEnvironmentBuilderToolSurface::BuildAutomatedSubturnHarnessPreamble(ParsedEnvKind) + EnvInner;
 			Conv->GetMessagesMutable().Add(SubEnv);
+			AssistantBuffer.Reset();
+			DispatchLlm();
+			return;
+		}
+
+		if (bSpecResultParsed)
+		{
+			Request.ActiveProductSpecialistId = EUnrealAiProductSpecialistId::None;
+			Request.LastProductSpecialistDelegationBrief.Reset();
+			Request.bInjectProductSpecialistResumeChunk = true;
+			EmitEnforcementEvent(TEXT("product_specialist_result"), TEXT("return_to_orchestrator"));
+			FUnrealAiConversationMessage RetSpec;
+			RetSpec.Role = TEXT("user");
+			RetSpec.Content = FString::Printf(TEXT("[Product specialist — result for orchestrator]\n%s"), *SpecResultInner);
+			Conv->GetMessagesMutable().Add(RetSpec);
 			AssistantBuffer.Reset();
 			DispatchLlm();
 			return;

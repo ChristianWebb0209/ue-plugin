@@ -2,6 +2,8 @@
 
 #include "Context/AgentContextTypes.h"
 #include "Harness/UnrealAiAgentTypes.h"
+#include "Tools/UnrealAiOrchestratorToolPolicy.h"
+#include "Tools/UnrealAiProductSpecialistToolPolicy.h"
 #include "Tools/UnrealAiToolCatalog.h"
 #include "Tools/UnrealAiToolSurfaceCompatibility.h"
 
@@ -18,6 +20,11 @@ bool UnrealAiAgentToolGate::PassesToolSurfaceFilter(
 	{
 		return true;
 	}
+	// Plan DAG node workers keep the full Agent tool surface until plan-mode is rebuilt for specialists.
+	if (Request.ThreadId.Contains(TEXT("_plan_")))
+	{
+		return true;
+	}
 	if (!CatalogOpt)
 	{
 		return true;
@@ -29,19 +36,27 @@ bool UnrealAiAgentToolGate::PassesToolSurfaceFilter(
 		return true;
 	}
 
-	TSet<FString> SurfaceTokens;
-	bool bAllSurfaces = false;
-	UnrealAiToolSurfaceCompatibility::ParseAgentSurfaces(*Def, SurfaceTokens, bAllSurfaces);
-
-	EUnrealAiToolSurfaceKind Kind = EUnrealAiToolSurfaceKind::MainAgent;
 	if (Request.bEnvironmentBuilderTurn)
 	{
-		Kind = EUnrealAiToolSurfaceKind::EnvironmentBuilder;
+		TSet<FString> SurfaceTokens;
+		bool bAllSurfaces = false;
+		UnrealAiToolSurfaceCompatibility::ParseAgentSurfaces(*Def, SurfaceTokens, bAllSurfaces);
+		return UnrealAiToolSurfaceCompatibility::ToolAllowedOnSurface(
+			SurfaceTokens, bAllSurfaces, EUnrealAiToolSurfaceKind::EnvironmentBuilder);
 	}
-	else if (Request.bBlueprintBuilderTurn)
+	if (Request.bBlueprintBuilderTurn)
 	{
-		Kind = EUnrealAiToolSurfaceKind::BlueprintBuilder;
+		TSet<FString> SurfaceTokens;
+		bool bAllSurfaces = false;
+		UnrealAiToolSurfaceCompatibility::ParseAgentSurfaces(*Def, SurfaceTokens, bAllSurfaces);
+		return UnrealAiToolSurfaceCompatibility::ToolAllowedOnSurface(
+			SurfaceTokens, bAllSurfaces, EUnrealAiToolSurfaceKind::BlueprintBuilder);
+	}
+	if (Request.ActiveProductSpecialistId != EUnrealAiProductSpecialistId::None)
+	{
+		return UnrealAiProductSpecialistToolPolicy::PassesSpecialistToolFilter(Request.ActiveProductSpecialistId, ToolId, *Def);
 	}
 
-	return UnrealAiToolSurfaceCompatibility::ToolAllowedOnSurface(SurfaceTokens, bAllSurfaces, Kind);
+	// Orchestrator lane: fixed allow-list (delegation tags carry substantive work).
+	return UnrealAiOrchestratorToolPolicy::IsOrchestratorTool(ToolId);
 }

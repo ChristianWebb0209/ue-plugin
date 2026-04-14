@@ -3,6 +3,7 @@
 #include "Prompt/UnrealAiPromptChunkUtils.h"
 #include "UnrealAiBlueprintBuilderTargetKind.h"
 #include "UnrealAiEnvironmentBuilderTargetKind.h"
+#include "UnrealAiProductSpecialistId.h"
 #include "HAL/CriticalSection.h"
 
 #include <initializer_list>
@@ -22,6 +23,9 @@ namespace UnrealAiMainAgentPromptDiskCache
 		K = HashCombine(K, Params.bIncludePlanNodeExecutionChunk ? 1u : 0u);
 		K = HashCombine(K, Params.bIncludeExecutionSubturnChunk ? 1u : 0u);
 		K = HashCombine(K, Params.bIncludePlanDagChunk ? 1u : 0u);
+		K = HashCombine(K, Params.bOrchestratorAgentTurn ? 1u : 0u);
+		K = HashCombine(K, static_cast<uint32>(Params.ActiveProductSpecialistId));
+		K = HashCombine(K, Params.bInjectProductSpecialistResumeChunk ? 1u : 0u);
 		return K;
 	}
 }
@@ -103,6 +107,80 @@ FString FUnrealAiLinearPromptAssemblyStrategy::BuildSystemDeveloperContent(const
 			Acc += C;
 		}
 	};
+
+	if (Params.ActiveProductSpecialistId != EUnrealAiProductSpecialistId::None)
+	{
+		AppendChunk(TEXT("01-identity.md"));
+		{
+			FString C2;
+			if (UnrealAiPromptChunkUtils::LoadChunk(ChunkSubdir, TEXT("02-operating-modes.md"), C2))
+			{
+				C2 = UnrealAiPromptChunkUtils::ExtractOperatingModeSection(C2, Params.Mode);
+				if (!Acc.IsEmpty())
+				{
+					Acc += TEXT("\n\n---\n\n");
+				}
+				Acc += C2;
+			}
+		}
+		switch (Params.ActiveProductSpecialistId)
+		{
+		case EUnrealAiProductSpecialistId::Scene:
+			AppendUnderChunksTree(TEXT("specialists/scene/00-overview.md"));
+			AppendUnderChunksTree(TEXT("specialists/scene/01-scope.md"));
+			break;
+		case EUnrealAiProductSpecialistId::Assets:
+			AppendUnderChunksTree(TEXT("specialists/assets/00-overview.md"));
+			AppendUnderChunksTree(TEXT("specialists/assets/01-scope.md"));
+			break;
+		case EUnrealAiProductSpecialistId::Viewport:
+			AppendUnderChunksTree(TEXT("specialists/viewport/00-overview.md"));
+			AppendUnderChunksTree(TEXT("specialists/viewport/01-scope.md"));
+			break;
+		case EUnrealAiProductSpecialistId::Diagnostics:
+			AppendUnderChunksTree(TEXT("specialists/diagnostics/00-overview.md"));
+			AppendUnderChunksTree(TEXT("specialists/diagnostics/01-scope.md"));
+			break;
+		case EUnrealAiProductSpecialistId::Playtest:
+			AppendUnderChunksTree(TEXT("specialists/playtest/00-overview.md"));
+			AppendUnderChunksTree(TEXT("specialists/playtest/01-scope.md"));
+			break;
+		case EUnrealAiProductSpecialistId::Animation:
+			AppendUnderChunksTree(TEXT("specialists/animation/00-overview.md"));
+			AppendUnderChunksTree(TEXT("specialists/animation/01-scope.md"));
+			break;
+		case EUnrealAiProductSpecialistId::ProjectIntel:
+			AppendUnderChunksTree(TEXT("specialists/project-intel/00-overview.md"));
+			AppendUnderChunksTree(TEXT("specialists/project-intel/01-scope.md"));
+			break;
+		case EUnrealAiProductSpecialistId::EditorUi:
+			AppendUnderChunksTree(TEXT("specialists/editor-ui/00-overview.md"));
+			AppendUnderChunksTree(TEXT("specialists/editor-ui/01-scope.md"));
+			break;
+		case EUnrealAiProductSpecialistId::Settings:
+			AppendUnderChunksTree(TEXT("specialists/settings/00-overview.md"));
+			AppendUnderChunksTree(TEXT("specialists/settings/01-scope.md"));
+			break;
+		case EUnrealAiProductSpecialistId::Materials:
+			AppendUnderChunksTree(TEXT("specialists/materials/00-overview.md"));
+			AppendUnderChunksTree(TEXT("specialists/materials/01-scope.md"));
+			break;
+		case EUnrealAiProductSpecialistId::None:
+		default:
+			break;
+		}
+		AppendUnderChunksTree(TEXT("specialists/00-delegation-brief-token.md"));
+		AppendChunk(TEXT("04-tool-calling-contract.md"));
+		AppendChunk(TEXT("05-context-and-editor.md"));
+		AppendChunk(TEXT("07-safety-banned.md"));
+		AppendChunk(TEXT("08-output-style.md"));
+		UnrealAiPromptChunkUtils::ApplyTemplateTokens(Acc, Params, B);
+		if (!B.SystemOrDeveloperBlock.IsEmpty())
+		{
+			Acc = B.SystemOrDeveloperBlock + TEXT("\n\n---\n\n") + Acc;
+		}
+		return Acc;
+	}
 
 	if (Params.bBlueprintBuilderMode)
 	{
@@ -194,6 +272,44 @@ FString FUnrealAiLinearPromptAssemblyStrategy::BuildSystemDeveloperContent(const
 		return Acc;
 	}
 
+	if (Params.bOrchestratorAgentTurn)
+	{
+		Acc.Reset();
+		AppendChunk(TEXT("01-identity.md"));
+		{
+			FString C2;
+			if (UnrealAiPromptChunkUtils::LoadChunk(ChunkSubdir, TEXT("02-operating-modes.md"), C2))
+			{
+				C2 = UnrealAiPromptChunkUtils::ExtractOperatingModeSection(C2, Params.Mode);
+				if (!Acc.IsEmpty())
+				{
+					Acc += TEXT("\n\n---\n\n");
+				}
+				Acc += C2;
+			}
+		}
+		AppendUnderChunksTree(TEXT("orchestrator/00-overview.md"));
+		AppendUnderChunksTree(TEXT("orchestrator/01-delegation-protocol.md"));
+		AppendChunk(TEXT("04-tool-calling-contract.md"));
+		AppendUnderChunksTree(TEXT("blueprint-builder/08-delegation-from-main-agent.md"));
+		if (Params.bInjectBlueprintBuilderResumeChunk)
+		{
+			AppendUnderChunksTree(TEXT("blueprint-builder/09-resume-on-main-agent.md"));
+		}
+		AppendUnderChunksTree(TEXT("environment-builder/07-delegation-from-main-agent.md"));
+		if (Params.bInjectEnvironmentBuilderResumeChunk)
+		{
+			AppendUnderChunksTree(TEXT("environment-builder/08-resume-on-main-agent.md"));
+		}
+		if (Params.bInjectProductSpecialistResumeChunk)
+		{
+			AppendUnderChunksTree(TEXT("specialists/00-resume-to-orchestrator.md"));
+		}
+		AppendChunk(TEXT("05-context-and-editor.md"));
+		AppendChunk(TEXT("07-safety-banned.md"));
+		AppendChunk(TEXT("08-output-style.md"));
+	}
+	else
 	{
 		const uint32 LayoutKey = UnrealAiMainAgentPromptDiskCache::MainPathLayoutKey(Params);
 		const uint32 DiskSig = UnrealAiPromptChunkUtils::GetPromptsLooseSignatureThrottled();
