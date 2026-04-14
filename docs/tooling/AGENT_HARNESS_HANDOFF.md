@@ -21,6 +21,12 @@ Index of all `docs/` files: [docs/README.md](../README.md)
 - **Escape hatch:** `bOmitMainAgentBlueprintMutationTools == false` disables surface gating for power users.
 - **Validators:** `scripts/Validate-UnrealAiToolCatalog.ps1`, `scripts/verify_tool_catalog_meta.py`, `scripts/audit_tool_agent_surfaces.py` (CI: `.github/workflows/validate-tool-catalog.yml`).
 
+### Orchestrator + product specialists (Agent delegation)
+
+- **Orchestrator lane:** `FUnrealAiAgentTurnRequest::IsOrchestratorAgentToolSurface()` — thin **`prompts/chunks/orchestrator/`** stack and a **two-tool** markdown appendix (`UnrealAiOrchestratorToolPolicy`) when the omit flag is on; substantive work uses **`<unreal_ai_delegate specialist="…">`** (see `orchestrator/01-delegation-protocol.md`) or Blueprint / Environment builder tags.
+- **Specialist sub-turns:** harness sets **`ActiveProductSpecialistId`** and **`LastProductSpecialistDelegationBrief`**; gate + appendix follow **`UnrealAiProductSpecialistToolPolicy`** / pinned core tools. Result closes with **`<unreal_ai_specialist_result>`** and resumes the orchestrator with optional **`specialists/00-resume-to-orchestrator.md`**.
+- **Plan:** product details and phased follow-ups live in [`tooling-subagent-delegation.md`](../planning/tooling-subagent-delegation.md).
+
 ---
 ## Iteration order
 

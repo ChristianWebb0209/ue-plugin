@@ -37,8 +37,8 @@ Therefore:
 
 | Concern | Today |
 |--------|--------|
-| **Eligibility** | Per-tool `modes`; optional **core pack** (defaults header) narrows to `always_include_in_core_pack` + extras. |
-| **Dynamic relevance** | None per turn. |
+| **Eligibility** | Per-tool `modes`; optional **core pack** (defaults header) narrows to `always_include_in_core_pack` + extras. **Orchestrator** / **product specialist** Agent turns use **pinned allow-lists** in `UnrealAiToolSurfacePipeline` (not BM25-ranked against the full catalog). |
+| **Dynamic relevance** | BM25 + domain bias for the **default wide** Agent path on **LLM round 1**; orchestrator and specialist rosters stay fixed per gate policy (rebuilt each round for appendix alignment). |
 | **Wire format** | Default: **`unreal_ai_dispatch`** + markdown index from `BuildCompactToolIndexAppendix`; optional **native** full `tools[]` via `ToolSurfaceUseDispatch = false` in [`UnrealAiRuntimeDefaults.h`](../../Plugins/UnrealAiEditor/Source/UnrealAiEditor/Private/Misc/UnrealAiRuntimeDefaults.h). |
 | **Context packing** | [`FUnrealAiContextService`](../context/context-management.md) — memories, snapshots, **docs** retrieval — **orthogonal** to tools. |
 

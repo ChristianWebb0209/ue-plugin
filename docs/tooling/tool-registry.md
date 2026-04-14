@@ -1,13 +1,13 @@
 # Unreal AI Editor — master tool registry
 
-**Version:** 1.1  
+**Version:** 1.2  
 **Target engine:** Unreal Engine 5.5+ (minor API names may drift — confirm against your installed `Engine/Source` before implementation.)  
 
 **Canonical machine-readable catalog:** The editor plugin loads [`Plugins/UnrealAiEditor/Resources/tools.main.json`](../../Plugins/UnrealAiEditor/Resources/tools.main.json) (`meta` + main roster `tools[]`) and merges [`tools.blueprint.json`](../../Plugins/UnrealAiEditor/Resources/tools.blueprint.json) and [`tools.environment.json`](../../Plugins/UnrealAiEditor/Resources/tools.environment.json) (`FUnrealAiToolCatalog::LoadFromPlugin`). Runtime execution: `FUnrealAiToolExecutionHost` + `UnrealAiToolDispatch.cpp` in `Private/Tools/`. Extend handlers there and keep this document in sync for narrative/Epic links.
 
 **This Markdown file** remains the **human-readable** narrative, Epic links, and engineering notes.
 
-**Related:** [`context-management.md`](../context/context-management.md), [`context-ingestion-refactor.md`](../planning/context-ingestion-refactor.md) (layered candidate pipeline plan), [`AGENT_HARNESS_HANDOFF.md`](AGENT_HARNESS_HANDOFF.md), [`tools-expansion.md`](tools-expansion.md) (tool surface pipeline, compiled defaults in `UnrealAiRuntimeDefaults.h`, architecture map), [`tool-catalog-audit-guide.md`](tool-catalog-audit-guide.md) (iterative catalog review using harness results), repo [`README.md`](../README.md).
+**Related:** [`context-management.md`](../context/context-management.md), [`context-ingestion-refactor.md`](../planning/context-ingestion-refactor.md) (layered candidate pipeline plan), [`tooling-subagent-delegation.md`](../planning/tooling-subagent-delegation.md) (orchestrator + product specialists, prompt stacks), [`AGENT_HARNESS_HANDOFF.md`](AGENT_HARNESS_HANDOFF.md), [`tools-expansion.md`](tools-expansion.md) (tool surface pipeline, compiled defaults in `UnrealAiRuntimeDefaults.h`, architecture map), [`tool-catalog-audit-guide.md`](tool-catalog-audit-guide.md) (iterative catalog review using harness results), repo [`README.md`](../README.md).
 
 ---
 
@@ -19,7 +19,7 @@ The catalog is still the **single schema source**, but **how much** of it reache
 |-----------|----------------|
 | **Native `tools[]`** | `ToolSurfaceUseDispatch = false` — full function definitions per enabled tool (large payload). |
 | **Dispatch (default)** | `ToolSurfaceUseDispatch = true` — tiny `tools[]` with `unreal_ai_dispatch` + **markdown tool index** in the system/developer text (`UnrealAiTurnLlmRequestBuilder`). |
-| **Tiered eligibility** | **Default on** for Agent + dispatch + **LLM round 1** (`UnrealAiToolSurfacePipeline` ranks via **BM25 + domain bias + session prior blend**, **dynamic K**, guardrail merge, **budgeted** index). Set `ToolEligibilityTelemetryEnabled = false` in the defaults header to skip the tiered path. See [`tools-expansion.md`](tools-expansion.md) §10 and [`architecture-maps/architecture.dsl`](../architecture-maps/architecture.dsl) view **`tool-surface-graph`**. |
+| **Tiered eligibility** | **Default on** for Agent + dispatch. **BM25 + domain bias + dynamic K** runs on **LLM round 1** for the default wide Agent path. **Orchestrator** and **product specialist** sub-turns use **fixed allow-lists** instead (telemetry: `orchestrator_allow_list`, `product_specialist_allow_list`); those lists are rebuilt on **every** LLM round so the markdown appendix stays aligned with `UnrealAiAgentToolGate`. Set `ToolEligibilityTelemetryEnabled = false` in the defaults header to skip the tiered path. See [`tools-expansion.md`](tools-expansion.md) §10 and [`architecture-maps/architecture.dsl`](../architecture-maps/architecture.dsl) view **`tool-surface-graph`**. |
 
 Optional per-tool metadata: `tools[].tool_surface.domain_tags` (see `meta.tool_surface` in the catalog JSON). **Docs/project vector retrieval** (`Retrieval Service`) is unrelated; it feeds **context**, not the tool roster.
 
@@ -29,7 +29,15 @@ Optional per-tool metadata: `tools[].tool_surface.domain_tags` (see `meta.tool_s
 - **Handoff:** the main agent emits **`<unreal_ai_build_blueprint>`** with YAML **`target_kind`**; the harness runs a **Blueprint Builder** sub-turn with the builder prompt stack and domain-filtered tools (`UnrealAiBuildBlueprintTag`, `FUnrealAiAgentHarness`, `UnrealAiBlueprintBuilderToolSurface`).
 - **Escape hatch:** when **`bOmitMainAgentBlueprintMutationTools`** is **false**, surface gating is bypassed so power users can expose graph tools on the main roster.
 
-Implementation: **`UnrealAiAgentToolGate.cpp`**, **`UnrealAiToolSurfaceCompatibility.cpp`**, prompts under **`Plugins/UnrealAiEditor/prompts/chunks/`** (especially **`04`**, **`10`**, **`12`**, **`14`**, **`blueprint-builder/**`**, **`environment-builder/**`**). Subagent catalog fragments (merged at load): **`Plugins/UnrealAiEditor/Resources/tools.blueprint.json`**, **`Plugins/UnrealAiEditor/Resources/tools.environment.json`**, **`Plugins/UnrealAiEditor/Resources/tools.main.json`** (`retrieval_bundle`: blueprint_builder, environment_builder, main_agent).
+### Orchestrator + product specialists (delegation lane)
+
+When **`FUnrealAiAgentTurnRequest::IsOrchestratorAgentToolSurface()`** is true (Agent, not a builder sub-turn, not a product specialist sub-turn, not a `*_plan_*` worker thread), the **thin orchestrator** prompt stack loads under **`prompts/chunks/orchestrator/`**, and the tool gate exposes only **`UnrealAiOrchestratorToolPolicy`** tools (read-mostly snapshot + message log) until the model delegates with **`<unreal_ai_delegate specialist="…">…</unreal_ai_delegate>`** or builder tags.
+
+**Product specialist** sub-turns set **`ActiveProductSpecialistId`**; the gate uses **`UnrealAiProductSpecialistToolPolicy`** (category-based allow rules). The inner delegate body is copied into specialist prompts as **`{{SPECIALIST_DELEGATION_BRIEF}}`** (`prompts/chunks/specialists/00-delegation-brief-token.md`). **Level Sequence / `animation_sequencer`** tools route to the **`animation`** specialist, not the asset librarian.
+
+Design reference: [`tooling-subagent-delegation.md`](../planning/tooling-subagent-delegation.md).
+
+Implementation (delegation + surfaces): **`UnrealAiAgentToolGate.cpp`**, **`UnrealAiToolSurfaceCompatibility.cpp`**, **`UnrealAiOrchestratorToolPolicy.*`**, **`UnrealAiProductSpecialistToolPolicy.*`**, **`UnrealAiProductSpecialistCoreTools.*`**, **`UnrealAiToolSurfacePipeline.cpp`**, **`FUnrealAiAgentHarness.cpp`**, **`UnrealAiPromptAssemblyStrategy.cpp`**, **`UnrealAiDelegateSpecialistTag.*`**, **`UnrealAiProductSpecialistHandoff.*`**, prompts **`chunks/orchestrator/`**, **`chunks/specialists/`**, plus shared **`chunks/common/`** (especially **`04`**, **`10`**, **`07`**, **`08`**). Subagent catalog fragments (merged at load): **`Plugins/UnrealAiEditor/Resources/tools.blueprint.json`**, **`Plugins/UnrealAiEditor/Resources/tools.environment.json`**, **`Plugins/UnrealAiEditor/Resources/tools.main.json`** (`retrieval_bundle`: blueprint_builder, environment_builder, main_agent).
 
 ---
 
