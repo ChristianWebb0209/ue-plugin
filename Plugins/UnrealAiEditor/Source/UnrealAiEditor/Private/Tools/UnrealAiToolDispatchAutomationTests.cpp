@@ -21,6 +21,8 @@
 #include "Tools/UnrealAiToolDispatch_BlueprintTools.h"
 #include "Tools/UnrealAiBlueprintGraphNodeGuid.h"
 #include "Tools/UnrealAiAgentToolGate.h"
+#include "Tools/UnrealAiToolSurfacePipeline.h"
+#include "UnrealAiProductSpecialistId.h"
 #include "Tools/UnrealAiToolSurfaceCompatibility.h"
 #include "EdGraphSchema_K2.h"
 #include "GraphBuilder/UnrealAiGraphEditDomain.h"
@@ -2698,18 +2700,53 @@ bool FUnrealAiAgentToolGateSurfaceTest::RunTest(const FString& Parameters)
 		UnrealAiAgentToolGate::PassesToolSurfaceFilter(Req, TEXT("blueprint_graph_patch"), &Catalog));
 
 	Req.bBlueprintBuilderTurn = false;
+	Req.ActiveProductSpecialistId = EUnrealAiProductSpecialistId::None;
 	TestTrue(
-		TEXT("default surfaces (no field) passes on main"),
+		TEXT("orchestrator lane: snapshot tool"),
+		UnrealAiAgentToolGate::PassesToolSurfaceFilter(Req, TEXT("editor_state_snapshot_read"), &Catalog));
+	TestFalse(
+		TEXT("orchestrator lane: scene tool blocked"),
 		UnrealAiAgentToolGate::PassesToolSurfaceFilter(Req, TEXT("editor_get_selection"), &Catalog));
+	Req.ActiveProductSpecialistId = EUnrealAiProductSpecialistId::Scene;
+	TestTrue(
+		TEXT("scene specialist: editor_get_selection"),
+		UnrealAiAgentToolGate::PassesToolSurfaceFilter(Req, TEXT("editor_get_selection"), &Catalog));
+	Req.ActiveProductSpecialistId = EUnrealAiProductSpecialistId::Assets;
+	TestTrue(
+		TEXT("assets specialist: asset_registry_query"),
+		UnrealAiAgentToolGate::PassesToolSurfaceFilter(Req, TEXT("asset_registry_query"), &Catalog));
+	TestFalse(
+		TEXT("assets specialist: level_sequence_create_asset blocked (animation_sequencer)"),
+		UnrealAiAgentToolGate::PassesToolSurfaceFilter(Req, TEXT("level_sequence_create_asset"), &Catalog));
+	TestFalse(
+		TEXT("assets specialist: actor_spawn blocked"),
+		UnrealAiAgentToolGate::PassesToolSurfaceFilter(Req, TEXT("actor_spawn_from_class"), &Catalog));
+	Req.ActiveProductSpecialistId = EUnrealAiProductSpecialistId::Animation;
+	TestTrue(
+		TEXT("animation specialist: level_sequence_create_asset"),
+		UnrealAiAgentToolGate::PassesToolSurfaceFilter(Req, TEXT("level_sequence_create_asset"), &Catalog));
+	Req.ActiveProductSpecialistId = EUnrealAiProductSpecialistId::Materials;
+	TestTrue(
+		TEXT("materials specialist: material_instance_set_parameter"),
+		UnrealAiAgentToolGate::PassesToolSurfaceFilter(Req, TEXT("material_instance_set_parameter"), &Catalog));
+	TestFalse(
+		TEXT("materials specialist: material_graph_export blocked"),
+		UnrealAiAgentToolGate::PassesToolSurfaceFilter(Req, TEXT("material_graph_export"), &Catalog));
+	Req.ActiveProductSpecialistId = EUnrealAiProductSpecialistId::None;
+	Req.ThreadId = TEXT("thread_plan_node_1");
+	TestTrue(
+		TEXT("plan thread bypasses orchestrator gate"),
+		UnrealAiAgentToolGate::PassesToolSurfaceFilter(Req, TEXT("editor_get_selection"), &Catalog));
+	Req.ThreadId.Reset();
 
 	Req.bOmitMainAgentBlueprintMutationTools = true;
 	Req.bBlueprintBuilderTurn = false;
 	Req.bEnvironmentBuilderTurn = false;
 	TestFalse(
-		TEXT("material_graph_patch blocked on main agent"),
+		TEXT("material_graph_patch blocked on orchestrator"),
 		UnrealAiAgentToolGate::PassesToolSurfaceFilter(Req, TEXT("material_graph_patch"), &Catalog));
-	TestTrue(
-		TEXT("material_graph_export allowed on main agent"),
+	TestFalse(
+		TEXT("material_graph_export blocked on orchestrator"),
 		UnrealAiAgentToolGate::PassesToolSurfaceFilter(Req, TEXT("material_graph_export"), &Catalog));
 	Req.bBlueprintBuilderTurn = true;
 	TestTrue(
@@ -2725,6 +2762,125 @@ bool FUnrealAiAgentToolGateSurfaceTest::RunTest(const FString& Parameters)
 	TestTrue(
 		TEXT("pcg_generate allowed on environment builder turn"),
 		UnrealAiAgentToolGate::PassesToolSurfaceFilter(Req, TEXT("pcg_generate"), &Catalog));
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FUnrealAiSpecialistToolSurfaceAllowListTest,
+	"UnrealAiEditor.Tools.SpecialistSurfaceAllowList",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FUnrealAiSpecialistToolSurfaceAllowListTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+
+	FUnrealAiToolCatalog Catalog;
+	TestTrue(TEXT("catalog loads"), Catalog.LoadFromPlugin());
+
+	FUnrealAiAgentTurnRequest Req;
+	Req.Mode = EUnrealAiAgentMode::Agent;
+	Req.bOmitMainAgentBlueprintMutationTools = true;
+	Req.ActiveProductSpecialistId = EUnrealAiProductSpecialistId::Animation;
+
+	FUnrealAiModelCapabilities Caps;
+	FString Md;
+	FUnrealAiToolSurfaceTelemetry Tel;
+	const bool bOk = UnrealAiToolSurfacePipeline::TryBuildTieredToolSurface(
+		Req,
+		1,
+		nullptr,
+		&Catalog,
+		Caps,
+		nullptr,
+		true,
+		Md,
+		Tel,
+		0,
+		0);
+	TestTrue(TEXT("tiered surface builds for animation specialist"), bOk);
+	TestEqual(TEXT("allow list telemetry mode"), Tel.ToolSurfaceMode, FString(TEXT("product_specialist_allow_list")));
+	TestTrue(TEXT("appendix lists level_sequence_create_asset"), Md.Contains(TEXT("level_sequence_create_asset")));
+	TestTrue(TEXT("ranked count matches eligible"), Tel.RankedTools.Num() == Tel.EligibleCount && Tel.EligibleCount > 0);
+	TestEqual(TEXT("first tool is pinned core"), Tel.RankedTools[0].ToolId, FString(TEXT("level_sequence_create_asset")));
+
+	FString MdRound2;
+	FUnrealAiToolSurfaceTelemetry TelRound2;
+	TestTrue(
+		TEXT("animation specialist round 2 still tiered allow-list"),
+		UnrealAiToolSurfacePipeline::TryBuildTieredToolSurface(
+			Req,
+			2,
+			nullptr,
+			&Catalog,
+			Caps,
+			nullptr,
+			true,
+			MdRound2,
+			TelRound2,
+			0,
+			0));
+	TestEqual(TEXT("specialist round 2 mode"), TelRound2.ToolSurfaceMode, FString(TEXT("product_specialist_allow_list")));
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FUnrealAiOrchestratorToolSurfaceAllowListTest,
+	"UnrealAiEditor.Tools.OrchestratorSurfaceAllowList",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FUnrealAiOrchestratorToolSurfaceAllowListTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+
+	FUnrealAiToolCatalog Catalog;
+	TestTrue(TEXT("catalog loads"), Catalog.LoadFromPlugin());
+
+	FUnrealAiAgentTurnRequest Req;
+	Req.Mode = EUnrealAiAgentMode::Agent;
+	Req.bOmitMainAgentBlueprintMutationTools = true;
+	Req.ActiveProductSpecialistId = EUnrealAiProductSpecialistId::None;
+	TestTrue(TEXT("request is orchestrator lane"), Req.IsOrchestratorAgentToolSurface());
+
+	FUnrealAiModelCapabilities Caps;
+	FString Md;
+	FUnrealAiToolSurfaceTelemetry Tel;
+	const bool bOk = UnrealAiToolSurfacePipeline::TryBuildTieredToolSurface(
+		Req,
+		1,
+		nullptr,
+		&Catalog,
+		Caps,
+		nullptr,
+		true,
+		Md,
+		Tel,
+		0,
+		0);
+	TestTrue(TEXT("tiered surface builds for orchestrator"), bOk);
+	TestEqual(TEXT("orchestrator telemetry mode"), Tel.ToolSurfaceMode, FString(TEXT("orchestrator_allow_list")));
+	TestEqual(TEXT("orchestrator roster size"), Tel.EligibleCount, 2);
+	TestTrue(TEXT("appendix lists snapshot"), Md.Contains(TEXT("editor_state_snapshot_read")));
+	TestTrue(TEXT("appendix lists message log"), Md.Contains(TEXT("engine_message_log_read")));
+
+	FString MdRound2;
+	FUnrealAiToolSurfaceTelemetry TelRound2;
+	TestTrue(
+		TEXT("orchestrator round 2 still tiered allow-list"),
+		UnrealAiToolSurfacePipeline::TryBuildTieredToolSurface(
+			Req,
+			2,
+			nullptr,
+			&Catalog,
+			Caps,
+			nullptr,
+			true,
+			MdRound2,
+			TelRound2,
+			0,
+			0));
+	TestEqual(TEXT("round 2 telemetry mode"), TelRound2.ToolSurfaceMode, FString(TEXT("orchestrator_allow_list")));
 
 	return true;
 }

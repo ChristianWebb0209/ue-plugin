@@ -256,8 +256,8 @@ namespace UnrealAiPlanExecutorPriv
 		virtual void OnRunContinuation(int32 PhaseIndex, int32 TotalPhasesHint) override
 		{
 			// Child Agent-mode harness calls OnRunContinuation(LlmRound-1, EffectiveMaxLlmRounds) — second value is
-			// the LLM round cap (e.g. 512), not "total plan phases". Forwarding that to the parent mislabels run.jsonl
-			// as total_phases_hint=512. Plan phase hints are emitted only from FUnrealAiPlanExecutor (planner + per node).
+			// the LLM round cap (profile / plan caps), not "total plan phases". Forwarding that to the parent mislabels
+			// run.jsonl phase hints. Plan phase hints are emitted only from FUnrealAiPlanExecutor (planner + per node).
 			if (!WorkerNodeId.IsEmpty())
 			{
 				return;

@@ -5,6 +5,7 @@
 #include "Harness/FUnrealAiModelProfileRegistry.h"
 #include "Harness/ILlmTransport.h"
 #include "Harness/UnrealAiAgentTypes.h"
+#include "UnrealAiProductSpecialistId.h"
 #include "Misc/Paths.h"
 #include "Misc/UnrealAiRuntimeDefaults.h"
 #include "Misc/UnrealAiWaitTimePolicy.h"
@@ -154,6 +155,9 @@ bool UnrealAiTurnLlmRequestBuilder::Build(
 	P.bEnvironmentBuilderMode = Request.bEnvironmentBuilderTurn;
 	P.EnvironmentBuilderTargetKind = Request.EnvironmentBuilderTargetKind;
 
+	P.ActiveProductSpecialistId = Request.ActiveProductSpecialistId;
+	P.bOrchestratorAgentTurn = Request.IsOrchestratorAgentToolSurface();
+
 	const bool bResumeChunk = Request.bInjectBlueprintBuilderResumeChunk;
 	Request.bInjectBlueprintBuilderResumeChunk = false;
 	P.bInjectBlueprintBuilderResumeChunk =
@@ -163,6 +167,13 @@ bool UnrealAiTurnLlmRequestBuilder::Build(
 	Request.bInjectEnvironmentBuilderResumeChunk = false;
 	P.bInjectEnvironmentBuilderResumeChunk =
 		bEnvResumeChunk && !Request.bEnvironmentBuilderTurn && Request.Mode == EUnrealAiAgentMode::Agent;
+
+	const bool bSpecResumeChunk = Request.bInjectProductSpecialistResumeChunk;
+	Request.bInjectProductSpecialistResumeChunk = false;
+	P.bInjectProductSpecialistResumeChunk = bSpecResumeChunk && Request.ActiveProductSpecialistId == EUnrealAiProductSpecialistId::None
+		&& Request.Mode == EUnrealAiAgentMode::Agent;
+
+	P.SpecialistDelegationBrief = Request.LastProductSpecialistDelegationBrief;
 
 	FString SystemContent;
 	{

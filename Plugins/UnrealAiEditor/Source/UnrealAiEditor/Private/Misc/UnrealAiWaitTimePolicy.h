@@ -71,11 +71,17 @@ namespace UnrealAiWaitTime
 	 */
 	inline constexpr int32 PlannerEmittedMaxDagNodes = 8;
 
+	/** Hard cap for `maxAgentLlmRounds` (model profile JSON, settings UI, harness backstop). */
+	inline constexpr int32 AgentMaxLlmRoundsHardCap = 4096;
+
+	/** Default `maxAgentLlmRounds` when a profile omits the field (matches `FUnrealAiModelCapabilities` default). */
+	inline constexpr int32 AgentDefaultMaxLlmRounds = 2048;
+
 	/** Max LLM rounds for EUnrealAiAgentMode::Plan (planner DAG only); agent plan nodes keep profile limits. */
-	inline constexpr int32 PlannerMaxLlmRounds = 16;
+	inline constexpr int32 PlannerMaxLlmRounds = 512;
 
 	/** Upper bound on LLM rounds for Agent turns whose thread id is a plan node (`*_plan_*`); applied in harness DispatchLlm. */
-	inline constexpr int32 PlanNodeMaxLlmRounds = 8;
+	inline constexpr int32 PlanNodeMaxLlmRounds = 512;
 
 	/**
 	 * Plan-node agent threads (`*_plan_*`): max invocations of the same inner tool name per node before harness blocks

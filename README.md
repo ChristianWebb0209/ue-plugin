@@ -1,32 +1,8 @@
-# Unreal AI Editor
+# Unreal AI Assistant 
 
-`Unreal AI Editor` is an Unreal Engine 5.7 plugin that brings an in-editor AI copilot to real project workflows: chat, tool execution, Blueprint authoring assistance, and context-aware planning.
+This is a learning project I am building to explore tooling, orchestration, and context management systems. My inspiration for this project was seeing how other Unreal Engine AI assistants fail constantly at actually modifying blueprints. A lot of Unreal Engine work is done in C++, and tools like claude code or Cursor already handle these better than I could, but a lot of Unreal Engine work also has to do with building blueprints. These blueprints come in all different types, from animation blueprints, AI decision trees (for things like enemy behaviors), material blueprints, and countless more.
 
-The project is designed around real-world constraints:
-
-- No required product backend.
-- BYOK model providers and local-first persistence.
-- Large tool surface area with guardrails.
-- Reliability hardening over time as features expand.
-
-## What this project solves
-
-- Keep Unreal workflows inside the editor instead of context-switching to external AI tools.
-- Let the assistant act through explicit tool calls instead of opaque side effects.
-- Build predictable context windows from editor state, project state, and optional retrieval.
-- Make long-running or multi-step actions visible to users through run status and transcript UX.
-
-## What currently works best
-
-- Streaming in-editor chat with per-thread persistence.
-- Broad tool catalog and tool dispatch path for editor operations.
-- Context assembly pipeline with deterministic editor/project signals.
-- Optional retrieval and memory integrations for richer context.
-- Blueprint-oriented flows routed through dedicated builder/handoff paths.
-
-For plugin feature and folder details, see `[Plugins/UnrealAiEditor/README.md](Plugins/UnrealAiEditor/README.md)`.
-
-
+My main takeaway has been that the existing AI asisstants try to do too much in single calls. They have individual tools for modifying blueprints, and send these tools to the LLM. I changed my approach to have countless subagents for specific areas wihtin this massive concept of building blueprints. (Plugins\UnrealAiEditor\prompts\chunks\blueprint-builder\kinds) There are 6 different kinds of blueprint builder for now (some only partially implemented). The downside to this is longer orchestration times, since the agent needs to do multiple back and forth calls to build different blueprints of different types. This downside is well worth it, however, since the gain in accuracy is huge. 
 
 ## Architecture Maps
 

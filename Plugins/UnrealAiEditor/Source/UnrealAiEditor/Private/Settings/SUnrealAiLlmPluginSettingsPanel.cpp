@@ -23,6 +23,7 @@
 #include "HAL/FileManager.h"
 #include "HAL/PlatformProcess.h"
 #include "Misc/Paths.h"
+#include "Misc/UnrealAiWaitTimePolicy.h"
 #include "Misc/FileHelper.h"
 #include "Styling/CoreStyle.h"
 #include "Widgets/Input/SButton.h"
@@ -807,11 +808,14 @@ void SUnrealAiLlmPluginSettingsPanel::LoadSettingsIntoUi()
 					double Mar = 0;
 					if ((*Mo)->TryGetNumberField(TEXT("maxAgentLlmRounds"), Mar))
 					{
-						Mr.MaxAgentLlmRoundsStr = FString::FromInt(FMath::Clamp(static_cast<int32>(Mar), 1, 512));
+						Mr.MaxAgentLlmRoundsStr = FString::FromInt(FMath::Clamp(
+							static_cast<int32>(Mar),
+							1,
+							UnrealAiWaitTime::AgentMaxLlmRoundsHardCap));
 					}
 					else
 					{
-						Mr.MaxAgentLlmRoundsStr = TEXT("512");
+						Mr.MaxAgentLlmRoundsStr = FString::FromInt(UnrealAiWaitTime::AgentDefaultMaxLlmRounds);
 					}
 					(*Mo)->TryGetBoolField(TEXT("supportsNativeTools"), Mr.bSupportsNativeTools);
 					(*Mo)->TryGetBoolField(TEXT("supportsParallelToolCalls"), Mr.bSupportsParallelToolCalls);
@@ -841,7 +845,7 @@ void SUnrealAiLlmPluginSettingsPanel::LoadSettingsIntoUi()
 		Mr.ProfileKey = TEXT("gpt-4o-mini");
 		Mr.MaxContextStr = TEXT("128000");
 		Mr.MaxOutputStr = TEXT("4096");
-		Mr.MaxAgentLlmRoundsStr = TEXT("512");
+		Mr.MaxAgentLlmRoundsStr = FString::FromInt(UnrealAiWaitTime::AgentDefaultMaxLlmRounds);
 		UpdateModelPricingHint(Mr);
 		R.Models.Add(Mr);
 		SectionRows.Add(MoveTemp(R));
@@ -1466,12 +1470,14 @@ bool SUnrealAiLlmPluginSettingsPanel::BuildJsonFromUi(FString& OutJson, FString&
 			}
 			const int32 Ctx = UnrealAiSettingsJsonUtil::ParsePositiveInt(Mr.MaxContextStr, 128000);
 			const int32 MaxOutTok = UnrealAiSettingsJsonUtil::ParsePositiveInt(Mr.MaxOutputStr, 4096);
-			int32 MaxRounds = UnrealAiSettingsJsonUtil::ParsePositiveInt(Mr.MaxAgentLlmRoundsStr, 512);
+			int32 MaxRounds = UnrealAiSettingsJsonUtil::ParsePositiveInt(
+				Mr.MaxAgentLlmRoundsStr,
+				UnrealAiWaitTime::AgentDefaultMaxLlmRounds);
 			if (MaxRounds <= 0)
 			{
-				MaxRounds = 512;
+				MaxRounds = UnrealAiWaitTime::AgentDefaultMaxLlmRounds;
 			}
-			MaxRounds = FMath::Clamp(MaxRounds, 1, 512);
+			MaxRounds = FMath::Clamp(MaxRounds, 1, UnrealAiWaitTime::AgentMaxLlmRoundsHardCap);
 			Mo->SetNumberField(TEXT("maxContextTokens"), Ctx);
 			Mo->SetNumberField(TEXT("maxOutputTokens"), MaxOutTok);
 			Mo->SetNumberField(TEXT("maxAgentLlmRounds"), MaxRounds);
@@ -1649,7 +1655,7 @@ FReply SUnrealAiLlmPluginSettingsPanel::OnAddModelClicked(int32 SectionIndex)
 	Mr.ProfileKey = TEXT("gpt-4o-mini");
 	Mr.MaxContextStr = TEXT("128000");
 	Mr.MaxOutputStr = TEXT("4096");
-	Mr.MaxAgentLlmRoundsStr = TEXT("512");
+	Mr.MaxAgentLlmRoundsStr = FString::FromInt(UnrealAiWaitTime::AgentDefaultMaxLlmRounds);
 	UpdateModelPricingHint(Mr);
 	SectionRows[SectionIndex].Models.Add(MoveTemp(Mr));
 	RebuildDynamicRows();

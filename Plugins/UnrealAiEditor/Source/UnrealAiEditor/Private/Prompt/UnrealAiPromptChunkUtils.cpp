@@ -170,6 +170,10 @@ void UnrealAiPromptChunkUtils::ApplyTemplateTokens(
 	ReplaceAll(Doc, TEXT("{{ACTIVE_TODO_SUMMARY}}"), TodoSum);
 	const FString RoundStr = FString::Printf(TEXT("%d / %d"), FMath::Max(1, P.LlmRound), FMath::Max(1, P.MaxLlmRounds));
 	ReplaceAll(Doc, TEXT("{{CONTINUATION_ROUND}}"), RoundStr);
+	const FString Brief = P.SpecialistDelegationBrief.IsEmpty()
+		? FString(TEXT("(none — see harness user message if this is a specialist sub-turn)"))
+		: P.SpecialistDelegationBrief;
+	ReplaceAll(Doc, TEXT("{{SPECIALIST_DELEGATION_BRIEF}}"), Brief);
 	const FString Pointer = FString::Printf(
 		TEXT("threadId=%s; storage=context.json activeTodoPlan + todoStepsDone"),
 		P.ThreadId.IsEmpty() ? TEXT("(unknown)") : *P.ThreadId);

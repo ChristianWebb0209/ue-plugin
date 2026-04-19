@@ -18,7 +18,7 @@ This document lists **every distinct mechanism** in Unreal AI Editor that uses t
 | **Cancel drain** | After sync timeout, `CancelTurn()` runs, then the runner waits up to **3s** for a terminal `run_finished`. | `CancelDrainWaitMs = 3000` (hardcoded in runner) | `UnrealAiHarnessScenarioRunner.cpp` |
 | **Streamed tool-call incomplete** | SSE can split `tool_calls` across chunks; guard against “forever partial” JSON. | `StreamToolIncompleteMaxEvents`, `StreamToolIncompleteMaxMs` | `FUnrealAiAgentHarness.cpp` |
 | **Inter–LLM-round pacing** | Optional delay between HTTP submits (429 / burst smoothing). | `HarnessRoundMinDelayMs` | `FUnrealAiAgentHarness.cpp` |
-| **Max LLM rounds per user send** | Backstop against infinite tool/LLM loops. | Profile `maxAgentLlmRounds` or internal backstop (e.g. 512) | `FUnrealAiAgentHarness.cpp` |
+| **Max LLM rounds per user send** | Backstop against infinite tool/LLM loops. | Profile `maxAgentLlmRounds` (clamped to `AgentMaxLlmRoundsHardCap`, default profile `AgentDefaultMaxLlmRounds`) | `FUnrealAiAgentHarness.cpp`, `UnrealAiWaitTimePolicy.h` |
 | **Repeated identical OK / fail / empty search** | Stop earlier than max rounds when the model repeats non-progress patterns. | Enforcement events + terminal `error_message` | `FUnrealAiAgentHarness.cpp` |
 | **TPM throttle (harness)** | Sliding-window token admission before chat/embed requests. | `HarnessTpmPerMinute`, `HarnessTpmWindowSec`, etc. | `UnrealAiHarnessTpmThrottle.cpp` |
 | **Tool-internal wall clocks** | Search / scan tools stop with partial results and may set `timeout_notice` / `timed_out` in JSON. | Per-tool `max_wall_ms` caps (e.g. 120s) | e.g. `UnrealAiToolDispatch_Search.cpp` |
