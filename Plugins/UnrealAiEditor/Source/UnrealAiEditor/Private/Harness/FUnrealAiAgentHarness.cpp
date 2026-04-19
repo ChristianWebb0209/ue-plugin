@@ -62,7 +62,7 @@ namespace UnrealAiAgentHarnessPriv
 	/** Default token budget per agent turn when profile sets maxAgentTurnTokens to 0 (unset in JSON). */
 	static constexpr int32 GHarnessDefaultMaxTurnTokens = 1000000;
 	/** Hard backstop on LLM↔tool iterations if token/repeat limits do not apply first. */
-	static constexpr int32 GHarnessMaxLlmRoundBackstop = 512;
+	static constexpr int32 GHarnessMaxLlmRoundBackstop = UnrealAiWaitTime::AgentMaxLlmRoundsHardCap;
 
 	static FString HashUtf8Query(const FString& S)
 	{

@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Context/AgentContextTypes.h"
+#include "Misc/UnrealAiWaitTimePolicy.h"
 #include "UnrealAiBlueprintBuilderTargetKind.h"
 #include "UnrealAiEnvironmentBuilderTargetKind.h"
 #include "UnrealAiProductSpecialistId.h"
@@ -28,9 +29,9 @@ struct FUnrealAiModelCapabilities
 	bool bSupportsImages = true;
 	/**
 	 * Soft backstop: max tool↔LLM iterations per user send (each round = one completion, possibly + tool calls).
-	 * Primary limits are repeated identical tool failures, consecutive identical successful no-progress tools (agent harness), and MaxAgentTurnTokens; this remains a safety ceiling (clamped e.g. 1–512).
+	 * Primary limits are repeated identical tool failures, consecutive identical successful no-progress tools (agent harness), and MaxAgentTurnTokens; this remains a safety ceiling (clamped to 1 through UnrealAiWaitTime::AgentMaxLlmRoundsHardCap).
 	 */
-	int32 MaxAgentLlmRounds = 512;
+	int32 MaxAgentLlmRounds = UnrealAiWaitTime::AgentDefaultMaxLlmRounds;
 	/**
 	 * Max total prompt+completion tokens for one agent turn (one user message / RunTurn).
 	 * Negative = unlimited; 0 = harness default cap; positive = hard limit.

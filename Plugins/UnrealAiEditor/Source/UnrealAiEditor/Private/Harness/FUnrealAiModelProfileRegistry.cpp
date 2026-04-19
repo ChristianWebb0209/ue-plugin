@@ -1,5 +1,6 @@
 #include "Harness/FUnrealAiModelProfileRegistry.h"
 
+#include "Misc/UnrealAiWaitTimePolicy.h"
 #include "Backend/IUnrealAiPersistence.h"
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonReader.h"
@@ -7,6 +8,11 @@
 
 namespace UnrealAiModelProfileRegistryUtil
 {
+	static void SanitizeMaxAgentLlmRounds(FUnrealAiModelCapabilities& Cap)
+	{
+		Cap.MaxAgentLlmRounds = FMath::Clamp(Cap.MaxAgentLlmRounds, 1, UnrealAiWaitTime::AgentMaxLlmRoundsHardCap);
+	}
+
 	static void ParseCapabilitiesObject(const TSharedPtr<FJsonObject>& O, FUnrealAiModelCapabilities& Out)
 	{
 		if (!O.IsValid())
@@ -55,7 +61,7 @@ namespace UnrealAiModelProfileRegistryUtil
 		C.bSupportsNativeTools = true;
 		C.bSupportsParallelToolCalls = true;
 		C.bSupportsImages = true;
-		C.MaxAgentLlmRounds = 512;
+		C.MaxAgentLlmRounds = UnrealAiWaitTime::AgentDefaultMaxLlmRounds;
 		C.MaxAgentTurnTokens = 0;
 		return C;
 	}
@@ -170,6 +176,7 @@ void FUnrealAiModelProfileRegistry::Reload()
 					FUnrealAiModelCapabilities Cap = UnrealAiModelProfileRegistryUtil::DefaultsForId(ProfileKey);
 					Cap.ModelIdForApi = ProfileKey;
 					UnrealAiModelProfileRegistryUtil::ParseCapabilitiesObject(*Mo, Cap);
+					UnrealAiModelProfileRegistryUtil::SanitizeMaxAgentLlmRounds(Cap);
 					Cap.ProviderId = E.Id;
 					if (Cap.ModelIdForApi.IsEmpty())
 					{
@@ -228,6 +235,7 @@ void FUnrealAiModelProfileRegistry::Reload()
 				FUnrealAiModelCapabilities Cap = UnrealAiModelProfileRegistryUtil::DefaultsForId(ModelKey);
 				Cap.ModelIdForApi = ModelKey;
 				UnrealAiModelProfileRegistryUtil::ParseCapabilitiesObject(*CapObj, Cap);
+				UnrealAiModelProfileRegistryUtil::SanitizeMaxAgentLlmRounds(Cap);
 				if (Cap.ModelIdForApi.IsEmpty())
 				{
 					Cap.ModelIdForApi = ModelKey;

@@ -236,7 +236,7 @@ Chronicle of changes aimed at headed harness quality and API reliability. Entrie
 
 - **`FUnrealAiPlanExecutor`:** One-shot **planner repair** after invalid JSON or failed `ValidateDag` (augmented user text via `MakePlannerDagRepairUserText`); `OriginalPlannerUserText` captured in `Start()`. Clearer `Finish` strings for `ResumeExecutionFromDag` parse/validate. Plan child `LlmRoundBudgetFloor` aligned with `PlanNodeMaxLlmRounds`.
 - **`FUnrealAiAgentHarness::DispatchLlm`:** Caps `EffectiveMaxLlmRounds` at `PlanNodeMaxLlmRounds` for Agent turns whose `threadId` contains `_plan_`.
-- **`UnrealAiWaitTimePolicy.h`:** `HarnessPlanPipelineSyncIdleAbortMs` (45s default), `PlanNodeMaxLlmRounds` (12).
+- **`UnrealAiWaitTimePolicy.h`:** `HarnessPlanPipelineSyncIdleAbortMs` (45s default); planner/plan-node LLM round caps live in `PlannerMaxLlmRounds` / `PlanNodeMaxLlmRounds` (see header for current values).
 - **`UnrealAiHarnessScenarioRunner`:** `GetEffectiveHarnessSyncIdleAbortMs` when `IsPlanPipelineActive`; idle-abort diagnostics use the **effective** ms (not always 3s).
 - **Prompts:** `02-operating-modes.md` (Plan checklist scope), `09-plan-dag.md` (v1 cost), new `11-plan-node-execution.md`; `UnrealAiPromptBuilder` / `UnrealAiTurnLlmRequestBuilder` inject chunk 11 for `*_plan_*` Agent threads.
 - **Docs:** Plan DAG behavior also described in prompt chunks and `docs/planning/subagents-architecture.md` (repair, plan-node rounds, plan-pipeline idle abort were covered in code + chunks).
